@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
+import time
 import datetime
 import requests
 
@@ -76,20 +77,42 @@ def save_historical_stats(stats):
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(stats, f, indent=2, ensure_ascii=False)
 
-def fetch_stats_for_item(item):
+def fetch_stats_for_item(item, max_retries=5):
+    """
+    Esegue il fetch dei dati dallo stats API in base al tipo:
+    - Per i roomitem usa ROOM_API_URL_TEMPLATE
+    - Per i wallitem usa WALL_API_URL_TEMPLATE
+    Implementa retry in caso di errore 429 Too Many Requests.
+    """
     classname = item["classname"]
     item_type = item["type"]
     if item_type == "room":
         url = ROOM_API_URL_TEMPLATE.format(classname)
     else:
         url = WALL_API_URL_TEMPLATE.format(classname)
-    try:
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        return response.json()
-    except Exception as e:
-        print(f"Errore nel fetch per {classname}: {e}")
-        return None
+    
+    retries = 0
+    wait_time = 10  # in secondi, valore iniziale
+    while retries < max_retries:
+        try:
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            if response.status_code == 429:
+                print(f"Too many requests per {classname}. Attendo {wait_time} secondi prima di ritentare...")
+                time.sleep(wait_time)
+                retries += 1
+                wait_time *= 2  # backoff esponenziale
+                continue
+            else:
+                print(f"Errore nel fetch per {classname}: {e}")
+                return None
+        except Exception as e:
+            print(f"Errore nel fetch per {classname}: {e}")
+            return None
+    print(f"Max retries raggiunti per {classname}. Saltando...")
+    return None
 
 def update_day_offsets(history, current_date):
     updated_history = []
