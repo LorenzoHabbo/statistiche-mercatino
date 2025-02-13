@@ -7,7 +7,7 @@ import datetime
 # URL del file di external_flash_texts
 URL = "https://www.habbo.it/gamedata/external_flash_texts/0"
 
-# Percorso locale (nella cartella external_flash_texts)
+# Salva il file nella stessa cartella dello script
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOCAL_FILE = os.path.join(CURRENT_DIR, "external_flash_texts.txt")
 
@@ -30,7 +30,6 @@ def load_local_text():
     return None
 
 def save_local_text(text):
-    os.makedirs(os.path.dirname(LOCAL_FILE), exist_ok=True)
     with open(LOCAL_FILE, "w", encoding="utf-8") as f:
         f.write(text)
 
@@ -46,9 +45,28 @@ def send_discord_notification(embeds):
     except Exception as e:
         print(f"Error sending Discord notification: {e}")
 
+def split_diff_chunks(diff_lines, max_length=1900):
+    """ Suddivide la lista di righe (ogni riga rappresenta una variabile) in chunk, senza spezzare righe singole. """
+    chunks = []
+    current_chunk = ""
+    for line in diff_lines:
+        if not current_chunk:
+            current_chunk = line
+        else:
+            if len(current_chunk) + len(line) + 1 > max_length:
+                chunks.append(current_chunk)
+                current_chunk = line
+            else:
+                current_chunk += "\n" + line
+    if current_chunk:
+        chunks.append(current_chunk)
+    return chunks
+
 def generate_diff(old_text, new_text):
     diff_lines = list(difflib.unified_diff(old_text.splitlines(), new_text.splitlines(), lineterm=""))
-    return diff_lines
+    # Filtra le righe di header
+    filtered_lines = [line for line in diff_lines if not (line.startswith('---') or line.startswith('+++') or line.startswith('@@'))]
+    return filtered_lines
 
 def main():
     new_text = download_text()
@@ -56,6 +74,7 @@ def main():
         return
     old_text = load_local_text()
     if old_text is None:
+        # Primo avvio: salva lo snapshot e notifica
         save_local_text(new_text)
         message = f"Initial External Flash Texts Snapshot saved on {datetime.datetime.now().isoformat()}."
         embed = {
@@ -71,41 +90,31 @@ def main():
         return
 
     diff_lines = generate_diff(old_text, new_text)
-    additions = []
-    deletions = []
-    for line in diff_lines:
-        if line.startswith('@@'):
-            continue
-        if line.startswith('---') or line.startswith('+++'):
-            continue
-        if line.startswith('+'):
-            additions.append(line)
-        elif line.startswith('-'):
-            deletions.append(line)
+    # Separa le righe aggiunte e quelle eliminate
+    additions = [line for line in diff_lines if line.startswith('+')]
+    deletions = [line for line in diff_lines if line.startswith('-')]
 
     embeds = []
     if additions:
-        add_desc = "\n".join(additions)
-        if len(add_desc) > 1900:
-            add_desc = add_desc[:1900] + "\n...(truncated)"
-        embeds.append({
-            "title": "External Flash Texts Additions",
-            "description": f"```diff\n{add_desc}\n```",
-            "color": 65280  # Verde
-        })
+        add_chunks = split_diff_chunks(additions, max_length=1900)
+        for chunk in add_chunks:
+            embeds.append({
+                "title": "External Flash Texts Additions",
+                "description": f"```diff\n{chunk}\n```",
+                "color": 65280  # Verde
+            })
     if deletions:
-        del_desc = "\n".join(deletions)
-        if len(del_desc) > 1900:
-            del_desc = del_desc[:1900] + "\n...(truncated)"
-        embeds.append({
-            "title": "External Flash Texts Deletions",
-            "description": f"```diff\n{del_desc}\n```",
-            "color": 16753920  # Arancione
-        })
-    
+        del_chunks = split_diff_chunks(deletions, max_length=1900)
+        for chunk in del_chunks:
+            embeds.append({
+                "title": "External Flash Texts Deletions",
+                "description": f"```diff\n{chunk}\n```",
+                "color": 16753920  # Arancione
+            })
+
     if embeds:
         send_discord_notification(embeds)
-    
+
     save_local_text(new_text)
     print("External Flash Texts updated.")
 
