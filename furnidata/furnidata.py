@@ -16,6 +16,8 @@ LOCAL_FILE = os.path.join(CURRENT_DIR, "furnidata.json")
 # Discord webhook (impostato come secret: DISCORD_WEBHOOK)
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
 
+MAX_LENGTH = 1900  # Lunghezza massima per la descrizione degli embed
+
 def download_furnidata():
     try:
         response = requests.get(FURNIDATA_URL, timeout=10)
@@ -39,40 +41,75 @@ def send_discord_embeds(embeds):
     if not DISCORD_WEBHOOK:
         print("DISCORD_WEBHOOK not set. Skipping Discord notification.")
         return
-    payload = {"embeds": embeds}
-    try:
-        response = requests.post(DISCORD_WEBHOOK, json=payload)
-        if response.status_code not in (200, 204):
-            print(f"Failed to send Discord notification: {response.status_code} {response.text}")
-    except Exception as e:
-        print(f"Error sending Discord notification: {e}")
+    for embed in embeds:
+        payload = {"embeds": [embed]}
+        try:
+            response = requests.post(DISCORD_WEBHOOK, json=payload)
+            if response.status_code not in (200, 204):
+                print(f"Failed to send Discord notification: {response.status_code} {response.text}")
+        except Exception as e:
+            print(f"Error sending Discord notification: {e}")
+
+def split_text_into_chunks(text, max_length=MAX_LENGTH):
+    """
+    Suddivide il testo in chunk, senza spezzare le righe.
+    """
+    lines = text.splitlines()
+    chunks = []
+    current_chunk = ""
+    for line in lines:
+        if not current_chunk:
+            current_chunk = line
+        else:
+            # Aggiungiamo "\n" come separatore (puoi sostituire con "\n\n" se preferisci doppio newline)
+            if len(current_chunk) + len(line) + 1 > max_length:
+                chunks.append(current_chunk)
+                current_chunk = line
+            else:
+                current_chunk += "\n" + line
+    if current_chunk:
+        chunks.append(current_chunk)
+    return chunks
 
 def send_discord_diff_notification(diff):
     embeds = []
     
+    # Prepara le aggiunte
     additions = {}
     if "dictionary_item_added" in diff:
         additions["dictionary_item_added"] = diff["dictionary_item_added"]
     if "iterable_item_added" in diff:
         additions["iterable_item_added"] = diff["iterable_item_added"]
     
+    # Prepara le modifiche
     modifications = diff.get("values_changed")
     
     if additions:
         additions_desc = json.dumps(additions, indent=2)
-        embeds.append({
-            "title": "Furnidata Additions",
-            "description": f"```json\n{additions_desc}\n```",
-            "color": 65280  # Verde
-        })
+        # Se il contenuto è lungo, suddividilo in chunk
+        if len(additions_desc) > MAX_LENGTH:
+            add_chunks = split_text_into_chunks(additions_desc, max_length=MAX_LENGTH)
+        else:
+            add_chunks = [additions_desc]
+        for chunk in add_chunks:
+            embeds.append({
+                "title": "Furnidata Additions",
+                "description": f"```json\n{chunk}\n```",
+                "color": 65280  # Verde
+            })
     if modifications:
         modifications_desc = json.dumps(modifications, indent=2)
-        embeds.append({
-            "title": "Furnidata Modifications",
-            "description": f"```json\n{modifications_desc}\n```",
-            "color": 16753920  # Arancione
-        })
-        
+        if len(modifications_desc) > MAX_LENGTH:
+            mod_chunks = split_text_into_chunks(modifications_desc, max_length=MAX_LENGTH)
+        else:
+            mod_chunks = [modifications_desc]
+        for chunk in mod_chunks:
+            embeds.append({
+                "title": "Furnidata Modifications",
+                "description": f"```json\n{chunk}\n```",
+                "color": 16753920  # Arancione
+            })
+    
     if embeds:
         send_discord_embeds(embeds)
     else:
@@ -90,7 +127,7 @@ def main():
 
     local_data = load_local_furnidata()
     if local_data is None:
-        # Primo avvio: salva lo snapshot iniziale e notifica
+        # Primo avvio: salva lo snapshot iniziale e invia una notifica
         save_local_furnidata(new_data)
         message = f"Initial furnidata snapshot saved on {datetime.datetime.now().isoformat()}."
         print(message)
