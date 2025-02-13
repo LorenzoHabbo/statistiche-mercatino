@@ -8,7 +8,8 @@ import datetime
 URL = "https://www.habbo.it/gamedata/external_flash_texts/0"
 
 # Percorso locale (nella cartella external_flash_texts)
-LOCAL_FILE = os.path.join("external_flash_texts", "external_flash_texts.txt")
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOCAL_FILE = os.path.join(CURRENT_DIR, "external_flash_texts.txt")
 
 # Discord webhook (impostato come secret: DISCORD_WEBHOOK_EXT_FLASH_TEXTS)
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK_EXT_FLASH_TEXTS")

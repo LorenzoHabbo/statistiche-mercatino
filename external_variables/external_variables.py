@@ -8,7 +8,8 @@ import datetime
 URL = "https://www.habbo.it/gamedata/external_variables/0"
 
 # Percorso locale (nella cartella external_variables)
-LOCAL_FILE = os.path.join("external_variables", "external_variables.txt")
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+LOCAL_FILE = os.path.join(CURRENT_DIR, "external_variables.txt")
 
 # Discord webhook (impostato come secret: DISCORD_WEBHOOK_EXT_VARIABLES)
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK_EXT_VARIABLES")
