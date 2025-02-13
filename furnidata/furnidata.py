@@ -9,12 +9,11 @@ from deepdiff import DeepDiff
 # URL del furnidata
 FURNIDATA_URL = "https://www.habbo.it/gamedata/furnidata_json/0"
 
-# File locale per salvare la versione precedente del furnidata
+# Percorso locale: salva il file nella stessa cartella dello script
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-LOCAL_FILE = os.path.join(CURRENT_DIR, "furnidata_prev.json")
+LOCAL_FILE = os.path.join(CURRENT_DIR, "furnidata.json")
 
-
-# Discord webhook URL (da impostare come variabile d'ambiente o secret)
+# Discord webhook (impostato come secret: DISCORD_WEBHOOK)
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
 
 def download_furnidata():
@@ -49,15 +48,9 @@ def send_discord_embeds(embeds):
         print(f"Error sending Discord notification: {e}")
 
 def send_discord_diff_notification(diff):
-    """
-    Invia una notifica su Discord con embed separati:
-      - Uno con colore verde per le aggiunte (dictionary_item_added e iterable_item_added)
-      - Uno con colore arancione per le modifiche (values_changed)
-    """
     embeds = []
     
     additions = {}
-    # Combina eventuali aggiunte in dizionario e in iterable
     if "dictionary_item_added" in diff:
         additions["dictionary_item_added"] = diff["dictionary_item_added"]
     if "iterable_item_added" in diff:
@@ -67,29 +60,26 @@ def send_discord_diff_notification(diff):
     
     if additions:
         additions_desc = json.dumps(additions, indent=2)
-        embed_add = {
+        embeds.append({
             "title": "Furnidata Additions",
             "description": f"```json\n{additions_desc}\n```",
             "color": 65280  # Verde
-        }
-        embeds.append(embed_add)
+        })
     if modifications:
         modifications_desc = json.dumps(modifications, indent=2)
-        embed_mod = {
+        embeds.append({
             "title": "Furnidata Modifications",
             "description": f"```json\n{modifications_desc}\n```",
-            "color": 16753920  # Arancione (0xFFA500)
-        }
-        embeds.append(embed_mod)
+            "color": 16753920  # Arancione
+        })
         
     if embeds:
         send_discord_embeds(embeds)
     else:
-        # Se non ci sono differenze rilevanti, invia un semplice messaggio testuale
         send_discord_embeds([{
             "title": "Furnidata Check",
             "description": f"No changes detected as of {datetime.datetime.now().isoformat()}",
-            "color": 3447003  # Blu (opzionale)
+            "color": 3447003  # Blu
         }])
 
 def main():
@@ -100,25 +90,22 @@ def main():
 
     local_data = load_local_furnidata()
     if local_data is None:
-        # Primo avvio: salvo lo snapshot iniziale e invio una notifica
+        # Primo avvio: salva lo snapshot iniziale e notifica
         save_local_furnidata(new_data)
         message = f"Initial furnidata snapshot saved on {datetime.datetime.now().isoformat()}."
         print(message)
         send_discord_embeds([{
             "title": "Initial Furnidata Snapshot",
             "description": message,
-            "color": 3447003
+            "color": 3447003  # Blu
         }])
         return
 
-    # Confronta il nuovo furnidata con quello locale usando DeepDiff
     diff = DeepDiff(local_data, new_data, ignore_order=True)
     if diff:
-        # Prepara la notifica con embed colorati
         send_discord_diff_notification(diff)
         print("Furnidata changes detected:")
         print(json.dumps(diff, indent=2))
-        # Aggiorna il file locale con i nuovi dati
         save_local_furnidata(new_data)
     else:
         print(f"No changes in furnidata as of {datetime.datetime.now().isoformat()}.")
