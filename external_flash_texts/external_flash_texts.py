@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import sys
 import requests
 import difflib
 import datetime
@@ -46,7 +47,7 @@ def send_discord_notification(embeds):
         print(f"Error sending Discord notification: {e}")
 
 def split_diff_chunks(diff_lines, max_length=1900):
-    """ Suddivide la lista di righe (ogni riga rappresenta una variabile) in chunk, senza spezzare righe singole. """
+    """Suddivide la lista di righe (ogni riga rappresenta una variabile) in chunk, senza spezzare righe singole."""
     chunks = []
     current_chunk = ""
     for line in diff_lines:
@@ -68,13 +69,22 @@ def generate_diff(old_text, new_text):
     filtered_lines = [line for line in diff_lines if not (line.startswith('---') or line.startswith('+++') or line.startswith('@@'))]
     return filtered_lines
 
+def send_test_webhook():
+    test_embed = {
+        "title": "Test Webhook - External Flash Texts",
+        "description": f"This is a test message sent on {datetime.datetime.now().isoformat()}",
+        "color": 3447003  # Blu
+    }
+    send_discord_notification([test_embed])
+    print("Test webhook sent.")
+
 def main():
     new_text = download_text()
     if new_text is None:
         return
     old_text = load_local_text()
     if old_text is None:
-        # Primo avvio: salva lo snapshot e notifica
+        # Primo avvio: salva lo snapshot iniziale e notifica
         save_local_text(new_text)
         message = f"Initial External Flash Texts Snapshot saved on {datetime.datetime.now().isoformat()}."
         embed = {
@@ -90,7 +100,6 @@ def main():
         return
 
     diff_lines = generate_diff(old_text, new_text)
-    # Separa le righe aggiunte e quelle eliminate
     additions = [line for line in diff_lines if line.startswith('+')]
     deletions = [line for line in diff_lines if line.startswith('-')]
 
@@ -119,4 +128,7 @@ def main():
     print("External Flash Texts updated.")
 
 if __name__ == "__main__":
+    if "--test" in sys.argv:
+        send_test_webhook()
+        sys.exit(0)
     main()
