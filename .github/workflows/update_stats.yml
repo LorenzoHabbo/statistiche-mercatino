@@ -5,6 +5,9 @@ on:
     - cron: '0 1 * * *'  # Esegue ogni giorno alle 1:00 (UTC)
   workflow_dispatch:   # Permette di eseguire il workflow manualmente
 
+permissions:
+  contents: write
+
 jobs:
   update-stats:
     runs-on: ubuntu-latest
