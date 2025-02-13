@@ -5,7 +5,7 @@ import datetime
 import requests
 import time
 
-# Costanti per gli endpoint API
+# Costanti per gli endpoint API (usati per il test; in ambiente reale verrebbero richiamati)
 ROOM_API_URL_TEMPLATE = "https://www.habbo.it/api/public/marketplace/stats/roomItem/{}"
 WALL_API_URL_TEMPLATE = "http://habbo.it/api/public/marketplace/stats/wallitem/{}"
 
@@ -21,12 +21,12 @@ def load_classnames():
       - "classname": il nome dell'oggetto
       - "type": "room" oppure "wall"
     
-    Questo evita di dover fare il fetch dall'URL di furnidata.
+    Questo evita di dover fare il fetch dal furnidata online.
     """
     test_items = [
-        {"classname": "pillow*6", "type": "room"},
-        {"classname": "diamond_painting77", "type": "wall"},
-        {"classname": "hc_gift_31days", "type": "room"},
+        {"classname": "shelves_norja", "type": "room"},
+        {"classname": "example_wall_item", "type": "wall"},
+        {"classname": "chair_example", "type": "room"},
         {"classname": "lamp_test", "type": "wall"}
     ]
     print(f"Loaded {len(test_items)} test classnames.")
@@ -34,7 +34,7 @@ def load_classnames():
 
 def load_historical_stats():
     """
-    Carica il file JSON storico se esiste, altrimenti restituisce un dizionario vuoto.
+    Carica il file storico se esiste, altrimenti restituisce un dizionario vuoto.
     """
     if os.path.exists(OUTPUT_FILE):
         with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
@@ -55,7 +55,7 @@ def fetch_stats_for_item(item, max_retries=3):
     - Per i roomitem usa ROOM_API_URL_TEMPLATE
     - Per i wallitem usa WALL_API_URL_TEMPLATE
     
-    Implementa una logica semplice di retry in caso di errore 429 (Too Many Requests).
+    Implementa retry con backoff in caso di errore 429.
     """
     classname = item["classname"]
     item_type = item["type"]
@@ -87,27 +87,32 @@ def fetch_stats_for_item(item, max_retries=3):
 
 def update_day_offsets(history, current_date):
     """
-    Ricalcola il campo "dayOffset" per ogni record della cronologia in base alla differenza
-    in giorni tra la data registrata (statsDate) e la data corrente.
-    
-    Se il delta supera HISTORY_LIMIT, il dayOffset viene fissato a -HISTORY_LIMIT.
+    Per ogni record della cronologia:
+      - Calcola il delta in giorni tra la data corrente e il record (statsDate).
+      - Imposta il campo "dayOffset" come valore negativo (fino a -HISTORY_LIMIT).
+      - Calcola inoltre la data corrispondente al dayOffset, salvandola nel campo "calculatedDate".
     """
     updated_history = []
     for record in history:
         try:
+            # La data originale del record (statsDate) deve essere nel formato "YYYY-MM-DD"
             record_date = datetime.datetime.strptime(record["statsDate"], "%Y-%m-%d").date()
             delta = (current_date - record_date).days
             day_offset = -min(delta, HISTORY_LIMIT)
             record["dayOffset"] = str(day_offset)
+            # Calcola la data corrispondente al dayOffset:
+            # Se dayOffset è -5, la calculatedDate sarà current_date - 5 giorni
+            calculated_date = current_date + datetime.timedelta(days=int(day_offset))
+            record["calculatedDate"] = calculated_date.isoformat()
             updated_history.append(record)
         except Exception as e:
-            print(f"Error updating dayOffset: {e}")
+            print(f"Error updating dayOffset for record: {e}")
             updated_history.append(record)
     return updated_history
 
 def main():
     current_date = datetime.date.today()
-    items = load_classnames()  # Lista di classnames da testare
+    items = load_classnames()  # Lista di classnames di test
     all_stats = load_historical_stats()
     
     for item in items:
@@ -117,10 +122,10 @@ def main():
         if api_result is None:
             continue
         
-        # Se il classname non è presente nel file storico, salva tutta la cronologia fornita dall'API
+        # Se il classname non è ancora presente nel file storico, salva tutta la cronologia restituita dall'API
         if classname not in all_stats:
             history_list = api_result.get("history", [])
-            # Se l'API non fornisce un campo "statsDate", usa la data odierna
+            # Se l'API non fornisce un campo "statsDate" per ogni record, usa la data odierna
             api_stats_date = api_result.get("statsDate", current_date.isoformat())
             for rec in history_list:
                 if "statsDate" not in rec:
@@ -130,7 +135,7 @@ def main():
         else:
             # Se il classname è già presente, aggiungi solo il nuovo record (se non già aggiornato per oggi)
             new_entry = None
-            # Cerchiamo il record più recente (ad es. con dayOffset "-1")
+            # Cerca il record più recente (ad esempio, con dayOffset "-1")
             for rec in api_result.get("history", []):
                 if rec.get("dayOffset") == "-1":
                     new_entry = rec
