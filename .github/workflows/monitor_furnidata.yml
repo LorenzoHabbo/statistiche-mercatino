@@ -5,13 +5,18 @@ on:
     - cron: '0 */1 * * *'  # Esegue ogni ora (UTC)
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  monitor:
+  monitor-furnidata:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          persist-credentials: true
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -25,7 +30,18 @@ jobs:
 
       - name: Run Furnidata Monitor Script
         working-directory: furnidata
-        run: |
-          python furnidata.py
+        run: python furnidata.py
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
+      - name: Commit and push Furnidata snapshot
+        working-directory: furnidata
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase
+          git add furnidata_prev.json
+          git commit -m "Update Furnidata Snapshot: $(date +'%Y-%m-%d')" || echo "No changes to commit"
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:${{ github.ref }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
