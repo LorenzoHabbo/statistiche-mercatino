@@ -10,7 +10,8 @@ from deepdiff import DeepDiff
 FURNIDATA_URL = "https://www.habbo.it/gamedata/furnidata_json/0"
 
 # File locale per salvare la versione precedente del furnidata
-LOCAL_FILE = "furnidata_prev.json"
+LOCAL_FILE = os.path.join("furnidata", "furnidata_prev.json")
+
 
 # Discord webhook URL (da impostare come variabile d'ambiente o secret)
 DISCORD_WEBHOOK = os.environ.get("DISCORD_WEBHOOK")
