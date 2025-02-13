@@ -5,7 +5,7 @@ import datetime
 import requests
 import time
 
-# Costanti per gli endpoint API (usati per il test; in ambiente reale verrebbero richiamati)
+# Costanti per gli endpoint API (usati per il test)
 ROOM_API_URL_TEMPLATE = "https://www.habbo.it/api/public/marketplace/stats/roomItem/{}"
 WALL_API_URL_TEMPLATE = "http://habbo.it/api/public/marketplace/stats/wallitem/{}"
 
@@ -24,9 +24,9 @@ def load_classnames():
     Questo evita di dover fare il fetch dal furnidata online.
     """
     test_items = [
-        {"classname": "hc_gift_31days", "type": "room"},
-        {"classname": "diamond_painting77", "type": "wall"},
         {"classname": "pillow*6", "type": "room"},
+        {"classname": "diamond_painting77", "type": "wall"},
+        {"classname": "hc_gift_31days", "type": "room"},
         {"classname": "lamp_test", "type": "wall"}
     ]
     print(f"Loaded {len(test_items)} test classnames.")
@@ -88,22 +88,24 @@ def fetch_stats_for_item(item, max_retries=3):
 def update_day_offsets(history, current_date):
     """
     Per ogni record della cronologia:
-      - Calcola il delta in giorni tra la data corrente e il record (statsDate).
-      - Imposta il campo "dayOffset" come valore negativo (fino a -HISTORY_LIMIT).
-      - Calcola inoltre la data corrispondente al dayOffset, salvandola nel campo "calculatedDate".
+      - Se presente, usa "originalStatsDate" come data originale, altrimenti "statsDate".
+      - Calcola la differenza in giorni tra la data corrente e la data originale.
+      - Imposta "dayOffset" come valore negativo (fino a -HISTORY_LIMIT).
+      - Calcola "calculatedDate" come data originale (cioè current_date + dayOffset).
     """
     updated_history = []
     for record in history:
         try:
-            # La data originale del record (statsDate) deve essere nel formato "YYYY-MM-DD"
-            record_date = datetime.datetime.strptime(record["statsDate"], "%Y-%m-%d").date()
-            delta = (current_date - record_date).days
+            original_date_str = record.get("originalStatsDate", record["statsDate"])
+            # Assicuriamoci di salvare l'originalStatsDate
+            record["originalStatsDate"] = original_date_str
+            original_date = datetime.datetime.strptime(original_date_str, "%Y-%m-%d").date()
+            delta = (current_date - original_date).days
             day_offset = -min(delta, HISTORY_LIMIT)
             record["dayOffset"] = str(day_offset)
-            # Calcola la data corrispondente al dayOffset:
-            # Se dayOffset è -5, la calculatedDate sarà current_date - 5 giorni
-            calculated_date = current_date + datetime.timedelta(days=int(day_offset))
-            record["calculatedDate"] = calculated_date.isoformat()
+            # Calcoliamo calculatedDate come: original_date + delta (che deve essere uguale a original_date)
+            # Oppure, se preferisci, puoi semplicemente assegnare original_date:
+            record["calculatedDate"] = original_date.isoformat()
             updated_history.append(record)
         except Exception as e:
             print(f"Error updating dayOffset for record: {e}")
@@ -122,20 +124,22 @@ def main():
         if api_result is None:
             continue
         
-        # Se il classname non è ancora presente nel file storico, salva tutta la cronologia restituita dall'API
+        # Se il classname non è presente nel file storico, salva l'intera cronologia restituita dall'API
         if classname not in all_stats:
             history_list = api_result.get("history", [])
-            # Se l'API non fornisce un campo "statsDate" per ogni record, usa la data odierna
+            # Se l'API non fornisce un campo "statsDate", usa la data odierna
             api_stats_date = api_result.get("statsDate", current_date.isoformat())
             for rec in history_list:
                 if "statsDate" not in rec:
                     rec["statsDate"] = api_stats_date
+                # Imposta anche originalStatsDate (così non verrà modificato in aggiornamenti futuri)
+                rec["originalStatsDate"] = rec["statsDate"]
             all_stats[classname] = update_day_offsets(history_list, current_date)
             print(f"Saved complete history for {classname} ({len(history_list)} records).")
         else:
-            # Se il classname è già presente, aggiungi solo il nuovo record (se non già aggiornato per oggi)
+            # Se il classname esiste già, aggiungi solo il nuovo record (se non già aggiornato per oggi)
             new_entry = None
-            # Cerca il record più recente (ad esempio, con dayOffset "-1")
+            # Cerchiamo il record più recente (ad esempio, con dayOffset "-1")
             for rec in api_result.get("history", []):
                 if rec.get("dayOffset") == "-1":
                     new_entry = rec
@@ -143,7 +147,9 @@ def main():
             if new_entry is None and api_result.get("history"):
                 new_entry = api_result["history"][-1]
             if new_entry:
+                # Per un nuovo record, statsDate e originalStatsDate vengono impostati con la data odierna
                 new_entry["statsDate"] = current_date.isoformat()
+                new_entry["originalStatsDate"] = current_date.isoformat()
                 last_date = datetime.datetime.strptime(all_stats[classname][-1]["statsDate"], "%Y-%m-%d").date()
                 if last_date < current_date:
                     all_stats[classname].append(new_entry)
