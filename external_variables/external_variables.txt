@@ -8493,10 +8493,8 @@ wired.menu.enabled=true
 wired.timezones=Europe/Rome
 wired.variables.context_visible=true
 xmas11.enabled=false
-xmas2012.calendar.enabled=false
-xmas2012.calendar.startdate=2012-12-02 00:00
-zendesk.url=https://help.habbo.it/home
-zoom.enabled=1
+xmas2012.calendar.enabled=ciao
+
 
 flash.client.url=https://images.habbo.com/gordon/flash-assets-PRODUCTION-202502121433-982384174/
 new.user.flow.roomTypes=10,11,12
