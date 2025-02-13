@@ -2,7 +2,7 @@ name: Monitor Furnidata
 
 on:
   schedule:
-    - cron: '0 */1 * * *'  # Esegue ogni 4 ore (UTC)
+    - cron: '0 */1 * * *'  # Esegue ogni ora (UTC)
   workflow_dispatch:
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests deepdiff
 
-      - name: Run furnidata monitor script
+      - name: Run Furnidata Monitor Script
         working-directory: furnidata
         run: |
           python furnidata.py

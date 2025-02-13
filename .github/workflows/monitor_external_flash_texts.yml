@@ -2,7 +2,7 @@ name: Monitor External Flash Texts
 
 on:
   schedule:
-    - cron: '0 */1 * * *'  # Esegue ogni 4 ore (UTC)
+    - cron: '0 */1 * * *'  # Esegue ogni ora (UTC)
   workflow_dispatch:
 
 jobs:
