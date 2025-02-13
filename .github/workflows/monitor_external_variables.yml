@@ -1,0 +1,31 @@
+name: Monitor External Variables
+
+on:
+  schedule:
+    - cron: '0 */4 * * *'  # Esegue ogni 4 ore (UTC)
+  workflow_dispatch:
+
+jobs:
+  monitor-external-variables:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests deepdiff
+
+      - name: Run External Variables Monitor
+        working-directory: external_variables
+        run: |
+          python external_variables.py
+        env:
+          DISCORD_WEBHOOK_EXT_VARIABLES: ${{ secrets.DISCORD_WEBHOOK_EXT_VARIABLES }}
