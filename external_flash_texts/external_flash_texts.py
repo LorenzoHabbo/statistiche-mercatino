@@ -49,22 +49,25 @@ def send_discord_notification(embeds):
 def split_diff_chunks(diff_lines, max_length=1900):
     """
     Suddivide la lista di righe (ognuna rappresenta una variabile) in chunk,
-    assicurandosi di non spezzare una singola riga.
+    assicurandosi di non spezzare una singola riga, e unendo le righe con doppio newline.
     """
     chunks = []
     current_chunk = ""
     for line in diff_lines:
+        # Usa "\n\n" come separatore per aggiungere una riga vuota
         if not current_chunk:
             current_chunk = line
         else:
-            if len(current_chunk) + len(line) + 1 > max_length:
+            # Calcola la lunghezza con due newline (2 caratteri) aggiunti
+            if len(current_chunk) + len(line) + 2 > max_length:
                 chunks.append(current_chunk)
                 current_chunk = line
             else:
-                current_chunk += "\n" + line
+                current_chunk += "\n\n" + line
     if current_chunk:
         chunks.append(current_chunk)
     return chunks
+
 
 def generate_diff(old_text, new_text):
     diff_lines = list(difflib.unified_diff(old_text.splitlines(), new_text.splitlines(), lineterm=""))
