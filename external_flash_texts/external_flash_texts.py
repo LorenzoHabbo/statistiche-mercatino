@@ -8,7 +8,7 @@ import datetime
 # URL del file di external_flash_texts
 URL = "https://www.habbo.it/gamedata/external_flash_texts/0"
 
-# Percorso locale: salva il file nella stessa cartella dello script
+# Salva il file nella stessa cartella dello script
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOCAL_FILE = os.path.join(CURRENT_DIR, "external_flash_texts.txt")
 
@@ -35,30 +35,33 @@ def save_local_text(text):
         f.write(text)
 
 def send_discord_notification(embeds):
+    """
+    Invia ogni embed in una richiesta separata.
+    """
     if not DISCORD_WEBHOOK:
         print("Discord webhook not set. Skipping notification.")
         return
-    payload = {"embeds": embeds}
-    try:
-        response = requests.post(DISCORD_WEBHOOK, json=payload)
-        if response.status_code not in (200, 204):
-            print(f"Failed to send Discord notification: {response.status_code} {response.text}")
-    except Exception as e:
-        print(f"Error sending Discord notification: {e}")
+    for embed in embeds:
+        payload = {"embeds": [embed]}
+        try:
+            response = requests.post(DISCORD_WEBHOOK, json=payload)
+            if response.status_code not in (200, 204):
+                print(f"Failed to send Discord notification: {response.status_code} {response.text}")
+        except Exception as e:
+            print(f"Error sending Discord notification: {e}")
 
 def split_diff_chunks(diff_lines, max_length=1900):
     """
-    Suddivide la lista di righe (ognuna rappresenta una variabile) in chunk,
-    assicurandosi di non spezzare una singola riga, e unendo le righe con doppio newline.
+    Suddivide la lista di righe in chunk, utilizzando "\n\n" per separare le righe,
+    in modo che ogni riga (variabile) non venga spezzata.
     """
     chunks = []
     current_chunk = ""
     for line in diff_lines:
-        # Usa "\n\n" come separatore per aggiungere una riga vuota
         if not current_chunk:
             current_chunk = line
         else:
-            # Calcola la lunghezza con due newline (2 caratteri) aggiunti
+            # Considera "\n\n" (2 caratteri) come separatore
             if len(current_chunk) + len(line) + 2 > max_length:
                 chunks.append(current_chunk)
                 current_chunk = line
@@ -68,10 +71,9 @@ def split_diff_chunks(diff_lines, max_length=1900):
         chunks.append(current_chunk)
     return chunks
 
-
 def generate_diff(old_text, new_text):
     diff_lines = list(difflib.unified_diff(old_text.splitlines(), new_text.splitlines(), lineterm=""))
-    # Rimuove le righe di header (che iniziano con ---, +++ o @@)
+    # Rimuove le righe di header
     filtered_lines = [line for line in diff_lines if not (line.startswith('---') or line.startswith('+++') or line.startswith('@@'))]
     return filtered_lines
 
@@ -125,4 +127,12 @@ def main():
     print("External Flash Texts updated.")
 
 if __name__ == "__main__":
+    if "--test" in sys.argv:
+        test_embed = {
+            "title": "Test Webhook - External Flash Texts",
+            "description": f"This is a test message sent on {datetime.datetime.now().isoformat()}",
+            "color": 3447003  # Blu
+        }
+        send_discord_notification([test_embed])
+        sys.exit(0)
     main()
