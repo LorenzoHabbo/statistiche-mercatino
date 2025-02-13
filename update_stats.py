@@ -1,120 +1,97 @@
 #!/usr/bin/env python3
 import json
 import os
-import time
 import datetime
 import requests
+import time
 
-FURNIDATA_URL = "https://www.habbo.it/gamedata/furnidata_json/0"
-OUTPUT_FILE = "historical_stats.json"
+# Costanti per gli endpoint API
 ROOM_API_URL_TEMPLATE = "https://www.habbo.it/api/public/marketplace/stats/roomItem/{}"
 WALL_API_URL_TEMPLATE = "http://habbo.it/api/public/marketplace/stats/wallitem/{}"
-HISTORY_LIMIT = 30  
 
-EXCLUDED_FURNILINE = {
-    "room_noob",
-    "buildersclub",
-    "buildersclub_alpha1",
-    "testing",
-    "sanrio",
-    "room_xbar",
-    "room_pcnc15",
-    "room_hall15",
-    "room_info15",
-    "room_thr15",
-    "room_cof15",
-    "habbo15",
-    "room_welcomelounge",
-    "spaces",
-    "newbie",
-    "room_gh15",
-    "room_hcl15",
-    "room_wl15",
-    "room_picnic",
-    "room_theatredome",
-    "room_lido"
-}
+# File di output per la cronologia
+OUTPUT_FILE = "historical_stats.json"
+
+# Limite massimo per il dayOffset (in negativo)
+HISTORY_LIMIT = 30
 
 def load_classnames():
-    try:
-        response = requests.get(FURNIDATA_URL, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        result = []
-        # Processa i roomitemtypes
-        room_items = data.get("roomitemtypes", {}).get("furnitype", [])
-        for item in room_items:
-            classname = item.get("classname", "")
-            furniline = item.get("furniline", "")
-            if classname.startswith("nft_") or classname.startswith("bc_"):
-                continue
-            if furniline and furniline.lower() in EXCLUDED_FURNILINE:
-                continue
-            result.append({"classname": classname, "type": "room"})
-        # Processa i wallitemtypes
-        wall_items = data.get("wallitemtypes", {}).get("furnitype", [])
-        for item in wall_items:
-            classname = item.get("classname", "")
-            furniline = item.get("furniline", "")
-            if classname.startswith("nft_") or classname.startswith("bc_"):
-                continue
-            if furniline and furniline.lower() in EXCLUDED_FURNILINE:
-                continue
-            result.append({"classname": classname, "type": "wall"})
-        print(f"Trovati {len(result)} classnames utili (room e wall).")
-        return result
-    except Exception as e:
-        print("Errore nel fetch dei classnames dal furnidata:", e)
-        return []
+    """
+    Per il test, restituisce una lista predefinita di dizionari contenenti:
+      - "classname": il nome dell'oggetto
+      - "type": "room" oppure "wall"
+    
+    Questo evita di dover fare il fetch dall'URL di furnidata.
+    """
+    test_items = [
+        {"classname": "pillow*6", "type": "room"},
+        {"classname": "diamond_painting77", "type": "wall"},
+        {"classname": "hc_gift_31days", "type": "room"},
+        {"classname": "lamp_test", "type": "wall"}
+    ]
+    print(f"Loaded {len(test_items)} test classnames.")
+    return test_items
 
 def load_historical_stats():
+    """
+    Carica il file JSON storico se esiste, altrimenti restituisce un dizionario vuoto.
+    """
     if os.path.exists(OUTPUT_FILE):
         with open(OUTPUT_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
 
 def save_historical_stats(stats):
+    """
+    Salva il dizionario 'stats' nel file OUTPUT_FILE in formato JSON.
+    """
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         json.dump(stats, f, indent=2, ensure_ascii=False)
 
-def fetch_stats_for_item(item, max_retries=5):
+def fetch_stats_for_item(item, max_retries=3):
     """
-    Esegue il fetch dei dati dallo stats API in base al tipo:
+    Esegue il fetch dei dati dall'API per un determinato item.
+    
     - Per i roomitem usa ROOM_API_URL_TEMPLATE
     - Per i wallitem usa WALL_API_URL_TEMPLATE
-    Implementa retry in caso di errore 429 Too Many Requests.
+    
+    Implementa una logica semplice di retry in caso di errore 429 (Too Many Requests).
     """
     classname = item["classname"]
     item_type = item["type"]
-    if item_type == "room":
-        url = ROOM_API_URL_TEMPLATE.format(classname)
-    else:
-        url = WALL_API_URL_TEMPLATE.format(classname)
+    url = ROOM_API_URL_TEMPLATE.format(classname) if item_type == "room" else WALL_API_URL_TEMPLATE.format(classname)
     
     retries = 0
-    wait_time = 10  # in secondi, valore iniziale
+    wait_time = 5  # secondi di attesa iniziali
     while retries < max_retries:
         try:
             response = requests.get(url, timeout=10)
             response.raise_for_status()
+            print(f"Fetched stats for {classname}.")
             return response.json()
         except requests.exceptions.HTTPError as e:
             if response.status_code == 429:
-                print(f"Too many requests per {classname}. Attendo {wait_time} secondi prima di ritentare...")
+                print(f"Too many requests for {classname}. Waiting {wait_time} seconds before retry...")
                 time.sleep(wait_time)
                 retries += 1
                 wait_time *= 2  # backoff esponenziale
                 continue
             else:
-                print(f"Errore nel fetch per {classname}: {e}")
+                print(f"HTTP error for {classname}: {e}")
                 return None
         except Exception as e:
-            print(f"Errore nel fetch per {classname}: {e}")
+            print(f"Error fetching stats for {classname}: {e}")
             return None
-    print(f"Max retries raggiunti per {classname}. Saltando...")
+    print(f"Max retries reached for {classname}. Skipping...")
     return None
 
 def update_day_offsets(history, current_date):
+    """
+    Ricalcola il campo "dayOffset" per ogni record della cronologia in base alla differenza
+    in giorni tra la data registrata (statsDate) e la data corrente.
+    
+    Se il delta supera HISTORY_LIMIT, il dayOffset viene fissato a -HISTORY_LIMIT.
+    """
     updated_history = []
     for record in history:
         try:
@@ -124,32 +101,36 @@ def update_day_offsets(history, current_date):
             record["dayOffset"] = str(day_offset)
             updated_history.append(record)
         except Exception as e:
-            print(f"Errore nel calcolo del dayOffset: {e}")
+            print(f"Error updating dayOffset: {e}")
             updated_history.append(record)
     return updated_history
 
 def main():
     current_date = datetime.date.today()
-    items = load_classnames()
+    items = load_classnames()  # Lista di classnames da testare
     all_stats = load_historical_stats()
-
+    
     for item in items:
         classname = item["classname"]
-        print(f"Fetch stats per {classname} ({item['type']})...")
+        print(f"Fetching stats for {classname} ({item['type']})...")
         api_result = fetch_stats_for_item(item)
         if api_result is None:
             continue
-
+        
+        # Se il classname non è presente nel file storico, salva tutta la cronologia fornita dall'API
         if classname not in all_stats:
             history_list = api_result.get("history", [])
+            # Se l'API non fornisce un campo "statsDate", usa la data odierna
             api_stats_date = api_result.get("statsDate", current_date.isoformat())
             for rec in history_list:
                 if "statsDate" not in rec:
                     rec["statsDate"] = api_stats_date
             all_stats[classname] = update_day_offsets(history_list, current_date)
-            print(f"Salvata cronologia completa per {classname} ({len(history_list)} record).")
+            print(f"Saved complete history for {classname} ({len(history_list)} records).")
         else:
+            # Se il classname è già presente, aggiungi solo il nuovo record (se non già aggiornato per oggi)
             new_entry = None
+            # Cerchiamo il record più recente (ad es. con dayOffset "-1")
             for rec in api_result.get("history", []):
                 if rec.get("dayOffset") == "-1":
                     new_entry = rec
@@ -161,13 +142,13 @@ def main():
                 last_date = datetime.datetime.strptime(all_stats[classname][-1]["statsDate"], "%Y-%m-%d").date()
                 if last_date < current_date:
                     all_stats[classname].append(new_entry)
-                    print(f"Aggiunto nuovo record per {classname}.")
+                    print(f"Added new record for {classname}.")
                 else:
-                    print(f"Record per {classname} già aggiornato per oggi.")
+                    print(f"Record for {classname} already updated for today.")
             all_stats[classname] = update_day_offsets(all_stats[classname], current_date)
-
+    
     save_historical_stats(all_stats)
-    print("Aggiornamento completato.")
+    print("Update completed.")
 
 if __name__ == "__main__":
     main()
