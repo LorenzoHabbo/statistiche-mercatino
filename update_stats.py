@@ -24,9 +24,9 @@ def load_classnames():
     Questo evita di dover fare il fetch dal furnidata online.
     """
     test_items = [
-        {"classname": "shelves_norja", "type": "room"},
-        {"classname": "example_wall_item", "type": "wall"},
-        {"classname": "chair_example", "type": "room"},
+        {"classname": "hc_gift_31days", "type": "room"},
+        {"classname": "diamond_painting77", "type": "wall"},
+        {"classname": "pillow*6", "type": "room"},
         {"classname": "lamp_test", "type": "wall"}
     ]
     print(f"Loaded {len(test_items)} test classnames.")
