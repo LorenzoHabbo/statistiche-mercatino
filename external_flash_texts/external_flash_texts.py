@@ -8,7 +8,7 @@ import datetime
 # URL del file di external_flash_texts
 URL = "https://www.habbo.it/gamedata/external_flash_texts/0"
 
-# Salva il file nella stessa cartella dello script
+# Percorso locale: salva il file nella stessa cartella dello script
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOCAL_FILE = os.path.join(CURRENT_DIR, "external_flash_texts.txt")
 
@@ -47,7 +47,10 @@ def send_discord_notification(embeds):
         print(f"Error sending Discord notification: {e}")
 
 def split_diff_chunks(diff_lines, max_length=1900):
-    """Suddivide la lista di righe (ogni riga rappresenta una variabile) in chunk, senza spezzare righe singole."""
+    """
+    Suddivide la lista di righe (ognuna rappresenta una variabile) in chunk,
+    assicurandosi di non spezzare una singola riga.
+    """
     chunks = []
     current_chunk = ""
     for line in diff_lines:
@@ -65,23 +68,14 @@ def split_diff_chunks(diff_lines, max_length=1900):
 
 def generate_diff(old_text, new_text):
     diff_lines = list(difflib.unified_diff(old_text.splitlines(), new_text.splitlines(), lineterm=""))
-    # Filtra le righe di header
+    # Rimuove le righe di header (che iniziano con ---, +++ o @@)
     filtered_lines = [line for line in diff_lines if not (line.startswith('---') or line.startswith('+++') or line.startswith('@@'))]
     return filtered_lines
-
-def send_test_webhook():
-    test_embed = {
-        "title": "Test Webhook - External Flash Texts",
-        "description": f"This is a test message sent on {datetime.datetime.now().isoformat()}",
-        "color": 3447003  # Blu
-    }
-    send_discord_notification([test_embed])
-    print("Test webhook sent.")
 
 def main():
     new_text = download_text()
     if new_text is None:
-        return
+        sys.exit(1)
     old_text = load_local_text()
     if old_text is None:
         # Primo avvio: salva lo snapshot iniziale e notifica
@@ -105,7 +99,7 @@ def main():
 
     embeds = []
     if additions:
-        add_chunks = split_diff_chunks(additions, max_length=1900)
+        add_chunks = split_diff_chunks(additions)
         for chunk in add_chunks:
             embeds.append({
                 "title": "External Flash Texts Additions",
@@ -113,7 +107,7 @@ def main():
                 "color": 65280  # Verde
             })
     if deletions:
-        del_chunks = split_diff_chunks(deletions, max_length=1900)
+        del_chunks = split_diff_chunks(deletions)
         for chunk in del_chunks:
             embeds.append({
                 "title": "External Flash Texts Deletions",
@@ -128,7 +122,4 @@ def main():
     print("External Flash Texts updated.")
 
 if __name__ == "__main__":
-    if "--test" in sys.argv:
-        send_test_webhook()
-        sys.exit(0)
     main()
