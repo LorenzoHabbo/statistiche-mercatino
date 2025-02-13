@@ -2,7 +2,7 @@ name: Aggiornamento Statistiche
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # Esegue ogni giorno a mezzanotte (UTC)
+    - cron: '0 1 * * *'  # Esegue ogni giorno alle 1:00 (UTC)
   workflow_dispatch:   # Permette di eseguire il workflow manualmente
 
 jobs:
@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          persist-credentials: true
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -27,7 +29,7 @@ jobs:
         run: |
           python update_stats.py
 
-        - name: Commit and push updated stats
+      - name: Commit and push updated stats
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -36,4 +38,3 @@ jobs:
           git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:${{ github.ref }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
