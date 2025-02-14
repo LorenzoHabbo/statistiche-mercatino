@@ -94,22 +94,9 @@ def get_by_path(data, keys):
 # --- Funzioni per generare il diff formattato in stile "diff" per Discord ---
 def generate_object_diff(old_obj, new_obj, modifications):
     """
-    Genera una stringa diff in stile:
-    {
-      "id": 16274,
-      "classname": "wf_act_teleport_to_room",
-      "revision": 72781,
-      "category": "wired",
-      "defaultdir": 0,
-      "xdim": 1,
-      "ydim": 1,
--     "name": "wf_act_teleport_to_room desc",
-+     "name": "EFFETTO: Teletrasporta a Stanza",
-      "description": "wf_act_teleport_to_room desc",
-      ...
-    }
-    Le righe modificate vengono mostrate doppie, con la vecchia (prefissata da "-")
-    e la nuova (prefissata da "+").
+    Genera una stringa diff in stile JSON per un oggetto con modifiche.
+    Le righe modificate iniziano direttamente con '-' o '+' per attivare
+    la sintassi diff di Discord.
     """
     # Crea una lista di chiavi preservando l'ordine del nuovo oggetto
     keys = list(new_obj.keys())
@@ -122,12 +109,13 @@ def generate_object_diff(old_obj, new_obj, modifications):
         if modifications and key in modifications:
             old_val = modifications[key]["old"]
             new_val = modifications[key]["new"]
+            # Rimuoviamo l'indentazione per le righe modificate
             line_old = f'- {json.dumps(key)}: {json.dumps(old_val)},'
             line_new = f'+ {json.dumps(key)}: {json.dumps(new_val)},'
-            lines.append("  " + line_old)
-            lines.append("  " + line_new)
+            lines.append(line_old)
+            lines.append(line_new)
         else:
-            # Se il campo non è stato modificato, mostra il valore (dal new_obj se presente)
+            # Le righe non modificate possono essere mantenute con indentazione (non influenzano il diff)
             val = new_obj.get(key, old_obj.get(key))
             line = f'  {json.dumps(key)}: {json.dumps(val)},'
             lines.append(line)
