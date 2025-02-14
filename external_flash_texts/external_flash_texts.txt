@@ -15182,6 +15182,7 @@ badge_name_SG224=Re degli Appuntamenti 2025
 badge_name_SG225=Stato: Frequentazione 2025
 badge_name_SG226=Stato: Frequentazione 2025
 badge_name_SG227=Gli Sposini 2025
+badge_name_SG228=Makeup Cuore
 badge_name_SGC=Il colore della Sposa
 badge_name_SGQ=Caro Habbo Natale...
 badge_name_SHA=x
