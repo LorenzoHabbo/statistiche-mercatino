@@ -3,7 +3,7 @@ import os
 import json
 import datetime
 import requests
-import time
+import re
 from deepdiff import DeepDiff
 
 # URL del furnidata
@@ -61,7 +61,6 @@ def split_text_into_chunks(text, max_length=MAX_LENGTH):
         if not current_chunk:
             current_chunk = line
         else:
-            # Aggiungiamo "\n" come separatore (puoi sostituire con "\n\n" se preferisci doppio newline)
             if len(current_chunk) + len(line) + 1 > max_length:
                 chunks.append(current_chunk)
                 current_chunk = line
@@ -71,52 +70,164 @@ def split_text_into_chunks(text, max_length=MAX_LENGTH):
         chunks.append(current_chunk)
     return chunks
 
-def send_discord_diff_notification(diff):
+# --- Helper per il parsing dei path DeepDiff ---
+def parse_diff_path(diff_path):
+    """
+    Converte una stringa tipo
+    "root['roomitemtypes']['furnitype'][14853]['name']"
+    in una lista di chiavi: ["roomitemtypes", "furnitype", 14853, "name"]
+    """
+    pattern = re.compile(r"\['([^']+)'\]|\[(\d+)\]")
+    keys = []
+    for match in pattern.finditer(diff_path):
+        if match.group(1) is not None:
+            keys.append(match.group(1))
+        elif match.group(2) is not None:
+            keys.append(int(match.group(2)))
+    return keys
+
+def get_by_path(data, keys):
+    for key in keys:
+        data = data[key]
+    return data
+
+# --- Funzioni per generare il diff formattato in stile "diff" per Discord ---
+def generate_object_diff(old_obj, new_obj, modifications):
+    """
+    Genera una stringa diff in stile:
+    {
+      "id": 16274,
+      "classname": "wf_act_teleport_to_room",
+      "revision": 72781,
+      "category": "wired",
+      "defaultdir": 0,
+      "xdim": 1,
+      "ydim": 1,
+-     "name": "wf_act_teleport_to_room desc",
++     "name": "EFFETTO: Teletrasporta a Stanza",
+      "description": "wf_act_teleport_to_room desc",
+      ...
+    }
+    Le righe modificate vengono mostrate doppie, con la vecchia (prefissata da "-")
+    e la nuova (prefissata da "+").
+    """
+    # Crea una lista di chiavi preservando l'ordine del nuovo oggetto
+    keys = list(new_obj.keys())
+    for key in old_obj:
+        if key not in new_obj and key not in keys:
+            keys.append(key)
+    lines = []
+    lines.append("{")
+    for key in keys:
+        if modifications and key in modifications:
+            old_val = modifications[key]["old"]
+            new_val = modifications[key]["new"]
+            line_old = f'- {json.dumps(key)}: {json.dumps(old_val)},'
+            line_new = f'+ {json.dumps(key)}: {json.dumps(new_val)},'
+            lines.append("  " + line_old)
+            lines.append("  " + line_new)
+        else:
+            # Se il campo non è stato modificato, mostra il valore (dal new_obj se presente)
+            val = new_obj.get(key, old_obj.get(key))
+            line = f'  {json.dumps(key)}: {json.dumps(val)},'
+            lines.append(line)
+    lines.append("}")
+    return "\n".join(lines)
+
+def generate_new_object_diff(new_obj):
+    """
+    Genera la rappresentazione completa di un nuovo oggetto, con ogni riga
+    preceduta dal segno "+".
+    """
+    lines = []
+    lines.append("{")
+    for key, value in new_obj.items():
+        line = f'+ {json.dumps(key)}: {json.dumps(value)},'
+        lines.append("  " + line)
+    lines.append("}")
+    return "\n".join(lines)
+
+def send_discord_diff_notification(diff, local_data, new_data):
     embeds = []
     
-    # Prepara le aggiunte
-    additions = {}
+    # --- Gestione dei nuovi oggetti ---
+    new_objects = {}
     if "dictionary_item_added" in diff:
-        additions["dictionary_item_added"] = diff["dictionary_item_added"]
+        for path in diff["dictionary_item_added"]:
+            keys = parse_diff_path(path)
+            try:
+                new_obj = get_by_path(new_data, keys)
+                new_objects[tuple(keys)] = new_obj
+            except Exception as e:
+                print(f"Error retrieving new object for path {path}: {e}")
     if "iterable_item_added" in diff:
-        additions["iterable_item_added"] = diff["iterable_item_added"]
+        for path in diff["iterable_item_added"]:
+            keys = parse_diff_path(path)
+            try:
+                new_obj = get_by_path(new_data, keys)
+                new_objects[tuple(keys)] = new_obj
+            except Exception as e:
+                print(f"Error retrieving new iterable item for path {path}: {e}")
+                
+    for parent, new_obj in new_objects.items():
+        diff_str = "```diff\n" + generate_new_object_diff(new_obj) + "\n```"
+        embed = {
+            "title": "Furnidata New Object",
+            "description": diff_str,
+            "color": 65280  # verde
+        }
+        embeds.append(embed)
     
-    # Prepara le modifiche
-    modifications = diff.get("values_changed")
+    # --- Gestione delle modifiche ---
+    modifications_by_parent = {}
+    if "values_changed" in diff:
+        for path, change in diff["values_changed"].items():
+            keys = parse_diff_path(path)
+            parent = tuple(keys[:-1])
+            field = keys[-1]
+            modifications_by_parent.setdefault(parent, {})[field] = {
+                "old": change["old_value"],
+                "new": change["new_value"]
+            }
     
-    if additions:
-        additions_desc = json.dumps(additions, indent=2)
-        # Se il contenuto è lungo, suddividilo in chunk
-        if len(additions_desc) > MAX_LENGTH:
-            add_chunks = split_text_into_chunks(additions_desc, max_length=MAX_LENGTH)
-        else:
-            add_chunks = [additions_desc]
-        for chunk in add_chunks:
-            embeds.append({
-                "title": "Furnidata Additions",
-                "description": f"```json\n{chunk}\n```",
-                "color": 65280  # Verde
-            })
-    if modifications:
-        modifications_desc = json.dumps(modifications, indent=2)
-        if len(modifications_desc) > MAX_LENGTH:
-            mod_chunks = split_text_into_chunks(modifications_desc, max_length=MAX_LENGTH)
-        else:
-            mod_chunks = [modifications_desc]
-        for chunk in mod_chunks:
-            embeds.append({
-                "title": "Furnidata Modifications",
-                "description": f"```json\n{chunk}\n```",
-                "color": 16753920  # Arancione
-            })
+    for parent, modifications in modifications_by_parent.items():
+        try:
+            old_obj = get_by_path(local_data, list(parent))
+        except Exception as e:
+            old_obj = {}
+        try:
+            new_obj = get_by_path(new_data, list(parent))
+        except Exception as e:
+            new_obj = {}
+        diff_representation = generate_object_diff(old_obj, new_obj, modifications)
+        diff_str = "```diff\n" + diff_representation + "\n```"
+        embed = {
+            "title": "Furnidata Modifications",
+            "description": diff_str,
+            "color": 16776960  # giallo
+        }
+        embeds.append(embed)
     
     if embeds:
-        send_discord_embeds(embeds)
+        # Se il testo supera MAX_LENGTH lo suddividiamo
+        final_embeds = []
+        for embed in embeds:
+            if len(embed["description"]) > MAX_LENGTH:
+                chunks = split_text_into_chunks(embed["description"], max_length=MAX_LENGTH)
+                for chunk in chunks:
+                    final_embeds.append({
+                        "title": embed["title"],
+                        "description": chunk,
+                        "color": embed["color"]
+                    })
+            else:
+                final_embeds.append(embed)
+        send_discord_embeds(final_embeds)
     else:
         send_discord_embeds([{
             "title": "Furnidata Check",
             "description": f"No changes detected as of {datetime.datetime.now().isoformat()}",
-            "color": 3447003  # Blu
+            "color": 3447003  # blu
         }])
 
 def main():
@@ -134,13 +245,13 @@ def main():
         send_discord_embeds([{
             "title": "Initial Furnidata Snapshot",
             "description": message,
-            "color": 3447003  # Blu
+            "color": 3447003  # blu
         }])
         return
 
     diff = DeepDiff(local_data, new_data, ignore_order=True)
     if diff:
-        send_discord_diff_notification(diff)
+        send_discord_diff_notification(diff, local_data, new_data)
         print("Furnidata changes detected:")
         print(json.dumps(diff, indent=2))
         save_local_furnidata(new_data)
